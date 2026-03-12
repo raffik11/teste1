@@ -3,8 +3,10 @@ import random
 import string
 import subprocess
 from datetime import datetime
+import holidays # Bibliothèque pour les jours fériés
 
-# Configuration des extensions et des formats de commentaires
+# --- CONFIGURATION ---
+COUNTRY = 'FR' # 'FR' pour la France, 'BE' pour la Belgique, 'CA' pour le Canada, etc.
 CONFIG = {
     ".php": ("/*", "*/"),
     ".js": ("/*", "*/"),
@@ -12,23 +14,35 @@ CONFIG = {
     ".html": ("")
 }
 
+def is_workday():
+    today = datetime.now().date()
+    fr_holidays = holidays.CountryHoliday(COUNTRY)
+    
+    # 1. Vérifie si c'est le week-end (5 = Samedi, 6 = Dimanche)
+    if today.weekday() >= 5:
+        print(f"--- WEEK-END ({today}) : Pas de commit ---")
+        return False
+        
+    # 2. Vérifie si c'est un jour férié
+    if today in fr_holidays:
+        print(f"--- JOUR FÉRIÉ ({fr_holidays.get(today)}) : Pas de commit ---")
+        return False
+        
+    return True
+
 def generate_noise(length=12):
     chars = string.ascii_letters + string.digits
     return ''.join(random.choice(chars) for _ in range(length))
 
 def run_chaos():
-    # Définition du répertoire de travail (celui du script)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     if base_dir != "":
         os.chdir(base_dir)
     
     all_eligible_files = []
-    
-    # 1. Scanner tous les fichiers disponibles
     for root, dirs, files in os.walk("."):
         if ".git" in dirs:
             dirs.remove(".git")
-            
         for file in files:
             ext = os.path.splitext(file)[1].lower()
             if ext in CONFIG:
@@ -37,34 +51,26 @@ def run_chaos():
     if not all_eligible_files:
         return 0
 
-    # 2. Choisir aléatoirement un nombre de fichiers à modifier
-    # On modifie entre 1 et la totalité des fichiers trouvés
     num_to_modify = random.randint(1, len(all_eligible_files))
     files_to_process = random.sample(all_eligible_files, num_to_modify)
     
     modified_count = 0
-    
-    # 3. Appliquer les modifications
     for file_path, ext in files_to_process:
         start, end = CONFIG[ext]
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         noise = generate_noise()
-        
         comment = f"\n{start} Auto-Gen: {timestamp} | ID: {noise} {end}\n"
         
         try:
             with open(file_path, "a", encoding="utf-8") as f:
                 f.write(comment)
             modified_count += 1
-            print(f"Modifié : {file_path}")
         except Exception as e:
-            print(f"[ERREUR FICHIER] {file_path}: {e}")
-
+            print(f"[ERREUR] {file_path}: {e}")
     return modified_count
 
 def git_sync():
     try:
-        # Ajout, Commit et Push
         subprocess.run(["git", "add", "."], check=True)
         msg = f"chore: automated update {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         subprocess.run(["git", "commit", "-m", msg], check=True)
@@ -74,15 +80,12 @@ def git_sync():
         print(f"--- ERREUR GIT : {e} ---")
 
 if __name__ == "__main__":
-    # OPTIONNEL : 20% de chance de ne rien faire du tout aujourd'hui
-    # Supprime les deux lignes suivantes si tu veux que ça tourne TOUS les jours
-    if random.random() < 0.20:
-        print("--- REPOS : Aucune modification aujourd'hui ---")
-        exit()
-
-    count = run_chaos()
-    if count > 0:
-        print(f"--- {count} FICHIERS MODIFIES ALEATOIREMENT ---")
-        git_sync()
+    # Vérification des jours ouvrables + fériés
+    if is_workday():
+        count = run_chaos()
+        if count > 0:
+            print(f"--- {count} FICHIERS MODIFIÉS ---")
+            git_sync()
     else:
-        print("--- AUCUN FICHIER COMPATIBLE TROUVE ---")
+        # Le script s'arrête gentiment si c'est un jour de repos
+        exit()
